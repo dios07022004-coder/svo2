@@ -13,7 +13,7 @@ window.SITE.config = {
   orgShortName: 'КОНТРАКТ СВО',
   // TODO: VERIFY OFFICIAL INFORMATION — укажите юридическое название организации
   legalName: 'ООО «Название организации»',
-  siteUrl: 'https://example.ru/', // TODO: заменить на реальный домен
+  siteUrl: 'https://xn----8sbe0aignfczgnl9b9e7b.xn--p1ai/', // сво-консультация.рф
 
   /* ---------- Телефон (используется во всех блоках) ---------- */
   phone: {

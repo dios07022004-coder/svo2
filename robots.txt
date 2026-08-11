@@ -3,6 +3,5 @@ Allow: /
 Disallow: /assets/js/
 Clean-param: utm_source&utm_medium&utm_campaign&utm_term&utm_content&yclid&gclid
 
-# TODO: заменить example.ru на реальный домен
-Sitemap: https://example.ru/sitemap.xml
-Host: https://example.ru
+Sitemap: https://xn----8sbe0aignfczgnl9b9e7b.xn--p1ai/sitemap.xml
+Host: https://xn----8sbe0aignfczgnl9b9e7b.xn--p1ai

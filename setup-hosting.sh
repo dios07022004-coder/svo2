@@ -1,97 +1,136 @@
 #!/bin/bash
 # ==========================================================================
-#  Первичная настройка хостинга reg.ru
+#  Настройка хостинга reg.ru: разворачивание сайта и автообновление
 # --------------------------------------------------------------------------
-#  Запускается ОДИН РАЗ на самом хостинге, после подключения по SSH.
-#  Делает две вещи: прописывает ключ для деплоя и клонирует репозиторий
-#  в корень сайта.
+#  Запускается на самом хостинге, после подключения по SSH.
+#  Повторный запуск безопасен — скрипт проверяет текущее состояние.
 #
-#  Как запустить:
-#    1. Подключитесь к хостингу:  ssh ВАШ_ЛОГИН@server233.hosting.reg.ru
-#    2. Скачайте и выполните:
-#         curl -sL https://raw.githubusercontent.com/dios07022004-coder/svo2/main/setup-hosting.sh | bash -s -- /путь/к/корню/сайта
+#  Что делает:
+#    1. клонирует репозиторий в корень сайта (или обновляет, если он уже там);
+#    2. ставит задание cron, которое каждые 2 минуты подтягивает изменения
+#       из GitHub. Ключи для этого не нужны — репозиторий публичный.
 #
-#  Либо скопируйте файл на хостинг и выполните:
-#         bash setup-hosting.sh /путь/к/корню/сайта
+#  Запуск:
+#    curl -sL https://raw.githubusercontent.com/dios07022004-coder/svo2/main/setup-hosting.sh | bash -s -- /путь/к/корню/сайта
 # ==========================================================================
 
 set -e
 
 REPO="https://github.com/dios07022004-coder/svo2.git"
-
-# Публичный ключ для деплоя с GitHub Actions.
-# Секретным не является: расшифровать по нему приватный ключ невозможно.
-DEPLOY_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG1QluDM3fRthqxqCLCNqz/PhbggtD/BG3vDW1gl2WWE github-deploy-svo2"
-
 TARGET="$1"
 
 if [ -z "$TARGET" ]; then
   echo "Ошибка: не указан корень сайта."
-  echo "Пример: bash setup-hosting.sh /home/u1234567/example.ru/www"
-  echo
-  echo "Путь смотрите в ISPmanager → Сайты → колонка «Корневая директория»."
+  echo "Пример: bash setup-hosting.sh /var/www/u3587604/data/www/example.ru"
   exit 1
 fi
 
-echo "==> 1. Ключ для автодеплоя"
-mkdir -p ~/.ssh && chmod 700 ~/.ssh
-touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
+# --------------------------------------------------------------------------
+# 1. Подбираем рабочий git
+# --------------------------------------------------------------------------
+# Системный git на reg.ru — версии 1.7.1, он не умеет работать с современным
+# TLS у GitHub и падает на клонировании. Панель ставит алиас git2192.
+echo "==> Проверяю git"
+GIT=""
+for candidate in git2192 git; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    ver=$("$candidate" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    major=${ver%%.*}
+    minor=${ver##*.}
+    if [ "$major" -gt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -ge 8 ]; }; then
+      GIT="$candidate"
+      break
+    fi
+  fi
+done
 
-if grep -qF "$DEPLOY_KEY" ~/.ssh/authorized_keys; then
-  echo "    Ключ уже прописан, пропускаю."
-else
-  echo "$DEPLOY_KEY" >> ~/.ssh/authorized_keys
-  echo "    Ключ добавлен в ~/.ssh/authorized_keys"
+if [ -z "$GIT" ]; then
+  echo "    Не нашёл git новее 1.8. Включите его в панели ISPmanager."
+  exit 1
 fi
+echo "    $($GIT --version) — подходит"
 
+# --------------------------------------------------------------------------
+# 2. Каталог сайта
+# --------------------------------------------------------------------------
 echo
-echo "==> 2. Версия git"
-# Системный git на reg.ru — 1.7.1, он не умеет работать с TLS у GitHub.
-if command -v git2192 >/dev/null 2>&1; then
-  GIT=git2192
-else
-  GIT=git
-fi
-echo "    Используется: $($GIT --version)"
-
-echo
-echo "==> 3. Каталог сайта"
+echo "==> Каталог сайта"
 if [ ! -d "$TARGET" ]; then
-  echo "    Каталог $TARGET не найден. Проверьте путь в ISPmanager."
+  echo "    Каталог $TARGET не найден."
+  echo "    Путь смотрите в ISPmanager → Сайты → «Корневая директория»."
   exit 1
 fi
 cd "$TARGET"
 echo "    $TARGET"
 
+# --------------------------------------------------------------------------
+# 3. Репозиторий
+# --------------------------------------------------------------------------
 echo
-echo "==> 4. Репозиторий"
+echo "==> Репозиторий"
 if [ -d .git ]; then
-  echo "    Репозиторий уже есть — обновляю до актуального состояния."
+  echo "    Уже развёрнут — обновляю до актуального состояния."
   $GIT fetch origin main
   $GIT reset --hard origin/main
+  $GIT clean -fd
 else
-  # Заглушка хостера мешает клонированию в непустой каталог
+  # Заглушка хостера мешает клонировать в непустой каталог
   rm -f index.html index.php default.html 2>/dev/null || true
 
   if [ -n "$(ls -A . 2>/dev/null)" ]; then
-    echo "    В каталоге есть файлы. Клонирую во временную папку и переношу."
+    echo "    Каталог не пуст — забираю репозиторий во временную папку."
     TMP=$(mktemp -d)
     $GIT clone "$REPO" "$TMP/repo"
-    # Переносим вместе со скрытыми файлами, включая .git
-    (shopt -s dotglob 2>/dev/null || true; mv "$TMP/repo/"* . 2>/dev/null || true)
-    mv "$TMP/repo/.git" . 2>/dev/null || true
-    mv "$TMP/repo/.gitignore" . 2>/dev/null || true
+    mv "$TMP/repo/.git" .
     rm -rf "$TMP"
     $GIT reset --hard HEAD
+    $GIT clean -fd
   else
     $GIT clone "$REPO" .
   fi
-  echo "    Репозиторий склонирован."
+  echo "    Развёрнут."
 fi
 
+# --------------------------------------------------------------------------
+# 4. Автообновление через cron
+# --------------------------------------------------------------------------
+# SSH-ключи здесь не нужны: хостинг сам ходит в публичный репозиторий.
 echo
-echo "==> Готово. Текущая версия:"
+echo "==> Автообновление"
+
+PULL_SCRIPT="$HOME/svo2-pull.sh"
+cat > "$PULL_SCRIPT" <<PULL
+#!/bin/bash
+# Подтягивает изменения из GitHub. Вызывается по cron.
+cd "$TARGET" || exit 0
+$GIT fetch origin main -q || exit 0
+$GIT reset --hard origin/main -q
+$GIT clean -fdq
+PULL
+chmod +x "$PULL_SCRIPT"
+echo "    Скрипт обновления: $PULL_SCRIPT"
+
+CRON_LINE="*/2 * * * * $PULL_SCRIPT >/dev/null 2>&1"
+
+if command -v crontab >/dev/null 2>&1; then
+  current=$(crontab -l 2>/dev/null || true)
+  if printf '%s\n' "$current" | grep -qF "svo2-pull.sh"; then
+    echo "    Задание cron уже есть."
+  else
+    printf '%s\n%s\n' "$current" "$CRON_LINE" | grep -v '^$' | crontab -
+    echo "    Задание cron добавлено: проверка каждые 2 минуты."
+  fi
+else
+  echo "    Команда crontab недоступна. Добавьте задание через панель:"
+  echo "    ISPmanager → Планировщик (cron) → Создать"
+  echo "    Команда: $PULL_SCRIPT"
+  echo "    Период : каждые 2 минуты"
+fi
+
+# --------------------------------------------------------------------------
+echo
+echo "==> Готово. Текущая версия сайта:"
 $GIT log -1 --format='    %h %s (%ci)'
 echo
-echo "Откройте сайт в браузере — должна открыться главная страница."
-echo "Дальше настройте секреты в GitHub, см. DEPLOY.md, шаг 3."
+echo "Откройте сайт в браузере."
+echo "Дальше правки на компьютере: git push — и через пару минут они на сайте."
