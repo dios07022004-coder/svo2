@@ -103,14 +103,30 @@ window.SITE = window.SITE || {};
   }
 
   /**
-   * Возвращает копию собранных меток.
+   * Возвращает метки для отправки вместе с заявкой.
+   *
+   * Набор полей всегда одинаковый: если метки не было, приходит пустая
+   * строка. Так на стороне вебхука и CRM структура заявки не «плавает»
+   * от посетителя к посетителю и её можно разбирать по фиксированной схеме.
+   *
    * @returns {Object}
    */
   window.SITE.utm = function () {
-    var copy = {};
-    Object.keys(data).forEach(function (k) {
-      copy[k] = data[k];
+    var out = {};
+
+    // Рекламные метки — всегда все, даже если пустые
+    UTM_KEYS.forEach(function (k) {
+      out[k] = data[k] || '';
     });
-    return copy;
+
+    // Служебные поля источника
+    out.referrer = data.referrer || '';
+    out.landing_page = data.landing_page || '';
+    out.first_seen = data.first_seen || '';
+
+    // Признак того, что переход был рекламным
+    out.has_utm = UTM_KEYS.some(function (k) { return !!data[k]; }) ? '1' : '0';
+
+    return out;
   };
 })();

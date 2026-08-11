@@ -1763,7 +1763,11 @@ strong {
   font-weight: 700;
 }
 
-/* Компактный CTA внутри секции */
+/* Компактный CTA внутри секции.
+   Блок используется и на тёмном фоне (выплаты), и на светлом (требования),
+   поэтому базовые цвета рассчитаны на светлый фон, а для .section--dark
+   ниже заданы отдельные значения. Иначе белый текст оказывается
+   на светлой подложке и становится нечитаемым. */
 .cta-inline {
   display: grid;
   gap: 14px;
@@ -1771,8 +1775,9 @@ strong {
   margin-top: 26px;
   padding: 20px;
   border-radius: var(--r-lg);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--border-dark);
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
 @media (min-width: 760px) {
@@ -1785,13 +1790,28 @@ strong {
 
 .cta-inline strong {
   display: block;
-  color: #fff;
+  color: var(--fg);
   font-size: var(--fs-lg);
   margin-bottom: 4px;
 }
 
 .cta-inline span {
   font-size: var(--fs-sm);
+  color: var(--fg-muted);
+}
+
+/* На тёмной секции возвращаем светлую типографику */
+.section--dark .cta-inline {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-dark);
+  box-shadow: none;
+}
+
+.section--dark .cta-inline strong {
+  color: #fff;
+}
+
+.section--dark .cta-inline span {
   color: var(--fg-invert-muted);
 }
 
