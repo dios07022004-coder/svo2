@@ -72,7 +72,6 @@ if [ -d .git ]; then
   echo "    Уже развёрнут — обновляю до актуального состояния."
   $GIT fetch origin main
   $GIT reset --hard origin/main
-  $GIT clean -fd
 else
   # Заглушка хостера мешает клонировать в непустой каталог
   rm -f index.html index.php default.html 2>/dev/null || true
@@ -84,7 +83,6 @@ else
     mv "$TMP/repo/.git" .
     rm -rf "$TMP"
     $GIT reset --hard HEAD
-    $GIT clean -fd
   else
     $GIT clone "$REPO" .
   fi
@@ -104,8 +102,9 @@ cat > "$PULL_SCRIPT" <<PULL
 # Подтягивает изменения из GitHub. Вызывается по cron.
 cd "$TARGET" || exit 0
 $GIT fetch origin main -q || exit 0
+# clean не вызываем: в корне сайта лежат .htaccess от панели
+# и .well-known для продления SSL — их трогать нельзя
 $GIT reset --hard origin/main -q
-$GIT clean -fdq
 PULL
 chmod +x "$PULL_SCRIPT"
 echo "    Скрипт обновления: $PULL_SCRIPT"
