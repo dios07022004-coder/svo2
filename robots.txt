@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /assets/js/
+Clean-param: utm_source&utm_medium&utm_campaign&utm_term&utm_content&yclid&gclid
+
+# TODO: заменить example.ru на реальный домен
+Sitemap: https://example.ru/sitemap.xml
+Host: https://example.ru

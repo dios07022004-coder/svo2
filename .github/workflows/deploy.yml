@@ -1,0 +1,110 @@
+# ==========================================================================
+#  Автоматический деплой на хостинг REG.RU
+# --------------------------------------------------------------------------
+#  Срабатывает при каждом push в ветку main, а также вручную
+#  (вкладка Actions → Deploy to reg.ru → Run workflow).
+#
+#  Что делает: подключается к хостингу по SSH и обновляет там рабочую копию
+#  репозитория до текущего состояния main. Файлы сайта лежат в корне репозитория,
+#  поэтому после git reset хостинг сразу отдаёт новую версию.
+#
+#  Нужные секреты (Settings → Secrets and variables → Actions → New secret):
+#    REGRU_HOST     — server233.hosting.reg.ru
+#    REGRU_USER     — логин хостинга (вида uXXXXXX)
+#    REGRU_PATH     — путь к корню сайта, например /home/uXXXXXX/example.ru/www
+#    REGRU_SSH_KEY  — ПРИВАТНЫЙ ssh-ключ целиком, вместе со строками BEGIN/END
+#    REGRU_PORT     — необязательно, по умолчанию 22
+# ==========================================================================
+
+name: Deploy to reg.ru
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Параллельные деплои не нужны: новый push отменяет предыдущий
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Обновить сайт на хостинге
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Проверить, что секреты заданы
+        env:
+          HOST: ${{ secrets.REGRU_HOST }}
+          USER: ${{ secrets.REGRU_USER }}
+          PATH_ON_HOST: ${{ secrets.REGRU_PATH }}
+          KEY: ${{ secrets.REGRU_SSH_KEY }}
+        run: |
+          missing=""
+          [ -z "$HOST" ] && missing="$missing REGRU_HOST"
+          [ -z "$USER" ] && missing="$missing REGRU_USER"
+          [ -z "$PATH_ON_HOST" ] && missing="$missing REGRU_PATH"
+          [ -z "$KEY" ] && missing="$missing REGRU_SSH_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Не заданы секреты:$missing"
+            echo "Добавьте их в Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "Все секреты на месте."
+
+      - name: Подготовить SSH-ключ
+        env:
+          KEY: ${{ secrets.REGRU_SSH_KEY }}
+          HOST: ${{ secrets.REGRU_HOST }}
+          PORT: ${{ secrets.REGRU_PORT }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Записываем отпечаток сервера, чтобы ssh не спрашивал подтверждение
+          ssh-keyscan -p "${PORT:-22}" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "Ключ готов."
+
+      - name: Обновить рабочую копию на хостинге
+        env:
+          HOST: ${{ secrets.REGRU_HOST }}
+          USER: ${{ secrets.REGRU_USER }}
+          PORT: ${{ secrets.REGRU_PORT }}
+          TARGET: ${{ secrets.REGRU_PATH }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${PORT:-22}" \
+              -o BatchMode=yes -o ConnectTimeout=20 \
+              "$USER@$HOST" "TARGET='$TARGET' bash -s" <<'REMOTE'
+            set -e
+
+            # На хостинге reg.ru системный git — версии 1.7.1, он не работает
+            # с современным TLS у GitHub. Если доступен git2192 — берём его.
+            if command -v git2192 >/dev/null 2>&1; then
+              GIT=git2192
+            else
+              GIT=git
+            fi
+            echo "Используется: $($GIT --version)"
+
+            cd "$TARGET"
+
+            if [ ! -d .git ]; then
+              echo "В каталоге нет репозитория. Выполните первичный клон — см. DEPLOY.md"
+              exit 1
+            fi
+
+            $GIT fetch origin main
+            $GIT reset --hard origin/main
+            # Убираем файлы, удалённые из репозитория, но оставляем то,
+            # что перечислено в .gitignore (например, локальные загрузки)
+            $GIT clean -fd
+
+            echo "Готово. Текущая версия:"
+            $GIT log -1 --format='%h %s (%ci)'
+          REMOTE
+
+      - name: Убрать ключ
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
