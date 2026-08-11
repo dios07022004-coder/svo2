@@ -3856,7 +3856,9 @@ strong {
   right: 0;
   bottom: 72px;
   width: min(384px, calc(100vw - 40px));
-  height: min(600px, calc(100dvh - 160px));
+  /* При сильном увеличении страницы 100dvh становится маленьким,
+     и без нижней границы окно схлопывалось в полоску */
+  height: clamp(280px, calc(100dvh - 160px), 600px);
   display: flex;
   flex-direction: column;
   background: var(--bg);

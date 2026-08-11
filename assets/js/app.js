@@ -1296,6 +1296,35 @@
     }
   }
 
+
+  /**
+   * Подводит к первой из только что добавленных статей.
+   *
+   * Ниже 767px (а также на десктопе при увеличении масштаба страницы)
+   * список статей превращается в горизонтальную ленту. Новые карточки
+   * дописываются справа, за пределами экрана, и пользователю кажется,
+   * что кнопка «Показать ещё» ничего не сделала.
+   */
+  function revealNewArticles(shownBefore) {
+    var grid = $('#articles-grid');
+    if (!grid) return;
+
+    var cards = $$('.post', grid);
+    var first = cards[shownBefore];
+    if (!first) return;
+
+    var horizontal = window.getComputedStyle(grid).overflowX === 'auto';
+
+    window.requestAnimationFrame(function () {
+      if (horizontal) {
+        var delta = first.getBoundingClientRect().left - grid.getBoundingClientRect().left;
+        grid.scrollTo({ left: grid.scrollLeft + delta - 12, behavior: 'smooth' });
+      } else {
+        first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  }
+
   function openArticle(id) {
     var a = DATA.articles.filter(function (x) { return x.id === id; })[0];
     if (!a) return;
@@ -1721,8 +1750,10 @@
 
       var artMore = t.closest('#articles-more-btn');
       if (artMore) {
+        var shownBefore = articlesShown;
         articlesShown += ARTICLES_STEP;
         renderArticles();
+        revealNewArticles(shownBefore);
         return;
       }
 
